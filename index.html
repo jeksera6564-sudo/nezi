@@ -1166,4 +1166,524 @@ class Game {
     renderQuests() {
         const container = document.getElementById('quests-list');
         container.innerHTML = this.quests.map(q => {
-            const percent = Math.min(100, (q.current / q
+            const percent = Math.min(100, (q.current / q.target) * 100);
+            return `<div class="quest ${q.completed ? 'completed' : ''}"><div class="quest-icon">📜</div><div class="quest-info"><div class="quest-name">${q.name}</div><div>${q.desc}</div><div class="quest-bar"><div class="quest-bar-fill" style="width: ${percent}%"></div></div><div>${q.current}/${q.target}</div></div><div style="color: #ffd700; font-weight: bold;">💰 ${this.formatNumber(q.reward)}</div></div>`;
+        }).join('');
+    }
+
+    updateQuests(type, amount) {
+        this.quests.forEach(q => {
+            if (q.type === type && !q.completed) {
+                if (type === 'combo') q.current = Math.max(q.current, amount);
+                else q.current += amount;
+                if (q.current >= q.target) {
+                    q.completed = true;
+                    this.coins += q.reward;
+                    this.showToast(`📜 Квест выполнен: ${q.name}! +${this.formatNumber(q.reward)}💰`);
+                }
+            }
+        });
+        this.renderQuests();
+    }
+
+    renderSkills() {
+        const container = document.getElementById('skills-grid');
+        container.innerHTML = this.skills.map(s => `<div class="skill"><div class="skill-icon">${s.icon}</div><div style="font-weight: bold;">${s.name}</div><div style="font-size: 0.85em; opacity: 0.8;">${s.desc}</div><div style="color: #ff6b6b; font-weight: bold;">Ур. ${s.level}/${s.maxLevel}</div><button class="btn ${s.level >= s.maxLevel ? 'disabled' : ''}" onclick="game.upgradeSkill('${s.id}')" ${s.level >= s.maxLevel ? 'disabled' : ''}>${s.level >= s.maxLevel ? 'MAX' : `💎 ${s.cost}`}</button></div>`).join('');
+    }
+
+    upgradeSkill(id) {
+        const skill = this.skills.find(s => s.id === id);
+        if (!skill || skill.level >= skill.maxLevel) return;
+        if (this.diamonds < skill.cost) {
+            this.showToast('❌ Недостаточно алмазов!');
+            return;
+        }
+        this.diamonds -= skill.cost;
+        skill.level++;
+        skill.cost = Math.floor(skill.cost * 1.5);
+        this.showToast(`⚡ ${skill.name} +1!`);
+        this.renderSkills();
+        const upgradedSkills = this.skills.filter(s => s.level > 0).length;
+        if (upgradedSkills >= 5) this.unlockAchievement('skill_master');
+    }
+
+    renderPets() {
+        const container = document.getElementById('pets-grid');
+        document.getElementById('active-pet').textContent = this.activePet ? `${this.activePet.icon} ${this.activePet.name}` : 'Нет';
+        container.innerHTML = this.pets.map(p => `<div class="pet-item ${p.owned ? (p.active ? 'active' : '') : 'locked'}" onclick="game.togglePet('${p.id}')"><div class="pet-icon">${p.icon}</div><div>${p.name}</div><div style="font-size: 0.85em; color: #ff9500;">${p.bonus}</div><div style="color: ${p.owned ? '#00ff00' : '#00ffff'};">${p.owned ? (p.active ? '✅ Активен' : 'Нажми') : `💎 ${p.cost}`}</div></div>`).join('');
+    }
+
+    togglePet(id) {
+        const pet = this.pets.find(p => p.id === id);
+        if (!pet) return;
+        if (!pet.owned) {
+            if (this.diamonds < pet.cost) {
+                this.showToast('❌ Недостаточно алмазов!');
+                return;
+            }
+            this.diamonds -= pet.cost;
+            pet.owned = true;
+            this.showToast(`🐾 ${pet.name} куплен!`);
+            this.unlockAchievement('pet_master');
+        }
+        this.pets.forEach(p => p.active = false);
+        this.activePet = null;
+        pet.active = true;
+        this.activePet = pet;
+        this.renderPets();
+    }
+
+    openChest(type) {
+        const costs = { common: 1000, rare: 5000, epic: 10, legendary: 50 };
+        const isDiamond = type === 'epic' || type === 'legendary';
+        if (isDiamond) {
+            if (this.diamonds < costs[type]) {
+                this.showToast('❌ Недостаточно алмазов!');
+                return;
+            }
+            this.diamonds -= costs[type];
+        } else {
+            if (this.coins < costs[type]) {
+                this.showToast('❌ Недостаточно монет!');
+                return;
+            }
+            this.coins -= costs[type];
+        }
+        const rewards = {
+            common: [{ type: 'coins', min: 500, max: 2000 }, { type: 'exp', min: 50, max: 200 }, { type: 'item', level: 3 }],
+            rare: [{ type: 'coins', min: 3000, max: 10000 }, { type: 'exp', min: 300, max: 1000 }, { type: 'item', level: 5 }, { type: 'diamonds', min: 1, max: 5 }],
+            epic: [{ type: 'coins', min: 10000, max: 50000 }, { type: 'item', level: 10 }, { type: 'diamonds', min: 5, max: 15 }, { type: 'slot', value: 1 }],
+            legendary: [{ type: 'coins', min: 100000, max: 500000 }, { type: 'item', level: 25 }, { type: 'diamonds', min: 20, max: 50 }, { type: 'skin', id: 'gold' }]
+        };
+        const possible = rewards[type];
+        const reward = possible[Math.floor(Math.random() * possible.length)];
+        switch(reward.type) {
+            case 'coins':
+                const coins = Math.floor(Math.random() * (reward.max - reward.min) + reward.min);
+                this.coins += coins;
+                this.showToast(`🎁 +${this.formatNumber(coins)} монет!`);
+                break;
+            case 'exp':
+                const exp = Math.floor(Math.random() * (reward.max - reward.min) + reward.min);
+                this.exp += exp;
+                this.showToast(`🎁 +${exp} опыта!`);
+                break;
+            case 'item':
+                this.items.push({ level: reward.level });
+                this.showToast(`🎁 Предмет ${reward.level} уровня!`);
+                break;
+            case 'diamonds':
+                const diamonds = Math.floor(Math.random() * (reward.max - reward.min) + reward.min);
+                this.diamonds += diamonds;
+                this.showToast(`💎 +${diamonds} алмазов!`);
+                break;
+            case 'slot':
+                this.slots += reward.value;
+                this.showToast(`📦 +${reward.value} слот!`);
+                break;
+            case 'skin':
+                const skin = this.skins.find(s => s.id === reward.id);
+                if (skin) {
+                    skin.unlocked = true;
+                    this.showToast(`🎨 Скин "${skin.name}" разблокирован!`);
+                }
+                break;
+        }
+        this.createParticles(window.innerWidth/2, window.innerHeight/2);
+        this.render();
+        this.renderSkins();
+    }
+
+    renderSkins() {
+        const container = document.getElementById('skins-grid');
+        container.innerHTML = this.skins.map(s => `<div class="skin-item ${s.equipped ? 'equipped' : ''} ${!s.unlocked ? 'locked' : ''}" onclick="game.equipSkin('${s.id}')"><div style="font-size: 2em;">${s.icon}</div><div>${s.name}</div><div style="color: ${s.unlocked ? '#00ff00' : '#ffd700'};">${s.unlocked ? (s.equipped ? '✅ Надет' : 'Надеть') : `💰 ${s.cost}`}</div></div>`).join('');
+    }
+
+    equipSkin(id) {
+        const skin = this.skins.find(s => s.id === id);
+        if (!skin) return;
+        if (!skin.unlocked) {
+            if (this.coins < skin.cost) {
+                this.showToast('❌ Недостаточно монет!');
+                return;
+            }
+            this.coins -= skin.cost;
+            skin.unlocked = true;
+            this.showToast(`🎨 Скин "${skin.name}" куплен!`);
+        }
+        this.skins.forEach(s => s.equipped = false);
+        skin.equipped = true;
+        this.equippedSkin = id;
+        this.renderSkins();
+        this.render();
+    }
+
+    startMemoryGame() {
+        if (this.memoryGame.active) return;
+        const emojis = ['🍎', '🍌', '🍇', '🍊', '🍓', '🍉', '🥝', '🍒'];
+        const cards = [...emojis, ...emojis].sort(() => Math.random() - 0.5);
+        this.memoryGame = { active: true, cards: cards, flipped: [], matched: 0 };
+        this.renderMemoryGame();
+    }
+
+    renderMemoryGame() {
+        const container = document.getElementById('memory-grid');
+        container.innerHTML = this.memoryGame.cards.map((emoji, i) => {
+            const isFlipped = this.memoryGame.flipped.includes(i);
+            const isMatched = this.memoryGame.matched > 0 && this.memoryGame.flipped.filter(f => this.memoryGame.cards[f] === emoji).length === 2;
+            return `<div class="memory-card ${isFlipped ? 'flipped' : ''} ${isMatched ? 'matched' : ''}" onclick="game.flipCard(${i})" style="${isFlipped || isMatched ? '' : 'font-size: 0;'}">${isFlipped || isMatched ? emoji : '?'}</div>`;
+        }).join('');
+    }
+
+    flipCard(index) {
+        if (!this.memoryGame.active) return;
+        if (this.memoryGame.flipped.includes(index)) return;
+        if (this.memoryGame.flipped.length >= 2) return;
+        this.memoryGame.flipped.push(index);
+        this.renderMemoryGame();
+        if (this.memoryGame.flipped.length === 2) {
+            const [a, b] = this.memoryGame.flipped;
+            if (this.memoryGame.cards[a] === this.memoryGame.cards[b]) {
+                this.memoryGame.matched++;
+                this.memoryGame.flipped = [];
+                if (this.memoryGame.matched === 8) {
+                    this.coins += 5000;
+                    this.showToast('🎉 Победа! +5000 монет!');
+                    this.memoryGame.active = false;
+                    setTimeout(() => { document.getElementById('memory-grid').innerHTML = ''; }, 2000);
+                }
+            } else {
+                setTimeout(() => { this.memoryGame.flipped = []; this.renderMemoryGame(); }, 1000);
+            }
+        }
+    }
+
+    renderDailyRewards() {
+        const container = document.getElementById('daily-rewards');
+        const rewards = ['💰', '💎', '⚡', '🔥', '⭐', '🎁', '👑'];
+        container.innerHTML = rewards.map((reward, i) => {
+            let className = 'daily-item';
+            if (i < this.dailyStreak % 7) className += ' claimed';
+            else if (i === this.dailyStreak % 7) className += ' today';
+            return `<div class="${className}"><div>${reward}</div><small>Д${i+1}</small></div>`;
+        }).join('');
+    }
+
+    checkDailyReward() {
+        const now = Date.now();
+        const canClaim = now - this.lastDailyClaim >= 24 * 60 * 60 * 1000;
+        document.getElementById('claim-daily-btn').disabled = !canClaim;
+        document.getElementById('claim-daily-btn').textContent = canClaim ? '🎁 Получить' : '⏳ Завтра';
+    }
+
+    claimDaily() {
+        const now = Date.now();
+        if (now - this.lastDailyClaim < 24 * 60 * 60 * 1000) return;
+        if (now - this.lastDailyClaim < 48 * 60 * 60 * 1000) this.dailyStreak++;
+        else this.dailyStreak = 1;
+        this.lastDailyClaim = now;
+        const day = (this.dailyStreak - 1) % 7;
+        const rewards = [{ coins: 100 }, { coins: 250 }, { coins: 500, exp: 100 }, { coins: 1000, item: 3 }, { coins: 2000, exp: 500 }, { coins: 5000, item: 5 }, { coins: 10000, exp: 1000, item: 10, diamonds: 10 }];
+        const reward = rewards[day];
+        if (reward.coins) {
+            this.coins += reward.coins;
+            this.showFloatingText(`+${reward.coins}💰`, window.innerWidth/2, window.innerHeight/2, '#ffd700');
+        }
+        if (reward.exp) {
+            this.exp += reward.exp;
+            this.showFloatingText(`+${reward.exp}⭐`, window.innerWidth/2, window.innerHeight/2 - 30, '#4ecdc4');
+        }
+        if (reward.item) {
+            this.items.push({ level: reward.item });
+            this.showFloatingText(`+${reward.item} ур!`, window.innerWidth/2, window.innerHeight/2 - 60, '#ff6b6b');
+        }
+        if (reward.diamonds) {
+            this.diamonds += reward.diamonds;
+            this.showFloatingText(`+${reward.diamonds}💎`, window.innerWidth/2, window.innerHeight/2 - 90, '#00ffff');
+        }
+        this.showToast(`🎁 День ${this.dailyStreak}!`);
+        this.renderDailyRewards();
+        this.checkDailyReward();
+        this.render();
+    }
+
+    spinWheel() {
+        if (this.coins < 1000) {
+            this.showToast('❌ Нужно 1000 монет!');
+            return;
+        }
+        this.coins -= 1000;
+        document.getElementById('spin-btn').disabled = true;
+        const wheel = document.getElementById('wheel');
+        const degrees = (5 + Math.random() * 5) * 360 + Math.random() * 360;
+        wheel.style.transform = `rotate(${degrees}deg)`;
+        setTimeout(() => {
+            const result = Math.floor((degrees % 360) / 45);
+            this.processWheelResult(result);
+            document.getElementById('spin-btn').disabled = false;
+        }, 4000);
+    }
+
+    processWheelResult(segment) {
+        const prizes = [
+            { type: 'coins', value: 5000, text: '5000💰' },
+            { type: 'exp', value: 1000, text: '1000⭐' },
+            { type: 'item', value: 10, text: 'Предмет 10!' },
+            { type: 'coins', value: 10000, text: '10000💰' },
+            { type: 'slot', value: 1, text: '+1 слот!' },
+            { type: 'coins', value: 2000, text: '2000💰' },
+            { type: 'diamonds', value: 5, text: '5💎' },
+            { type: 'jackpot', value: 50000, text: 'ДЖЕКПОТ 50000!' }
+        ];
+        const prize = prizes[segment];
+        switch(prize.type) {
+            case 'coins': this.coins += prize.value; break;
+            case 'exp': this.exp += prize.value; break;
+            case 'item': this.items.push({ level: prize.value }); break;
+            case 'slot': this.slots++; break;
+            case 'diamonds': this.diamonds += prize.value; break;
+            case 'jackpot': this.coins += prize.value; this.unlockAchievement('lucky'); break;
+        }
+        this.showToast(`🎰 ${prize.text}`);
+        this.createParticles(window.innerWidth/2, window.innerHeight/2);
+        this.render();
+    }
+
+    victory() {
+        document.getElementById('final-score').textContent = this.formatNumber(this.coins);
+        document.getElementById('victory').classList.add('active');
+        this.createFireworks();
+    }
+
+    continueGame() {
+        document.getElementById('victory').classList.remove('active');
+    }
+
+    checkAchievements() {
+        const checks = [
+            { id: 'level_10', condition: this.maxLevel >= 10 },
+            { id: 'level_25', condition: this.maxLevel >= 25 },
+            { id: 'level_50', condition: this.maxLevel >= 50 },
+            { id: 'level_75', condition: this.maxLevel >= 75 },
+            { id: 'rich', condition: this.coins >= 1000000 },
+            { id: 'collector', condition: this.slots >= 22 }
+        ];
+        checks.forEach(check => { if (check.condition) this.unlockAchievement(check.id); });
+    }
+
+    unlockAchievement(id) {
+        const ach = this.achievements.find(a => a.id === id);
+        if (ach && !ach.unlocked) {
+            ach.unlocked = true;
+            this.renderAchievements();
+            this.showToast(`🏅 ${ach.name}!`);
+        }
+    }
+
+    renderAchievements() {
+        const container = document.getElementById('achievements-list');
+        container.innerHTML = this.achievements.map(ach => `<div class="achievement ${ach.unlocked ? 'unlocked' : ''}"><div class="achievement-icon">${ach.icon}</div><div class="achievement-info"><div class="achievement-name">${ach.name}</div><div class="achievement-desc">${ach.desc}</div></div><div>${ach.unlocked ? '✅' : '🔒'}</div></div>`).join('');
+    }
+
+    updateStats() {
+        document.getElementById('stat-merges').textContent = this.formatNumber(this.totalMerges);
+        document.getElementById('stat-time').textContent = this.formatTime(this.playTime);
+        document.getElementById('stat-earned').textContent = this.formatNumber(this.totalEarned);
+        document.getElementById('stat-max-combo').textContent = this.maxCombo;
+    }
+
+    showTab(tabName, btn) {
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
+        document.getElementById(`tab-${tabName}`).classList.add('active');
+        if (btn) btn.classList.add('active');
+    }
+
+    toggleTheme() {
+        this.lightTheme = !this.lightTheme;
+        document.body.classList.toggle('light-theme', this.lightTheme);
+        document.querySelectorAll('.settings-btn')[1].textContent = this.lightTheme ? '☀️' : '🌙';
+    }
+
+    showExportModal() {
+        document.getElementById('export-modal').classList.add('active');
+    }
+
+    closeModal() {
+        document.getElementById('export-modal').classList.remove('active');
+    }
+
+    exportSave() {
+        const data = {
+            coins: this.coins, diamonds: this.diamonds, exp: this.exp, maxLevel: this.maxLevel,
+            items: this.items, slots: this.slots, incomeMultiplier: this.incomeMultiplier,
+            clickMultiplier: this.clickMultiplier, autoMergeUnlocked: this.autoMergeUnlocked,
+            costs: this.costs, shopLevel: this.shopLevel, prestigePoints: this.prestigePoints,
+            prestigeMultiplier: this.prestigeMultiplier, achievements: this.achievements,
+            totalMerges: this.totalMerges, totalEarned: this.totalEarned, playTime: this.playTime,
+            maxCombo: this.maxCombo, dailyStreak: this.dailyStreak, lastDailyClaim: this.lastDailyClaim,
+            skills: this.skills, pets: this.pets, skins: this.skins, equippedSkin: this.equippedSkin,
+            playerLevel: this.playerLevel, playerXP: this.playerXP, playerXPRequired: this.playerXPRequired,
+            quests: this.quests, autoclickerUnlocked: this.autoclickerUnlocked
+        };
+        document.getElementById('save-code').value = btoa(JSON.stringify(data));
+        this.showToast('📤 Код скопирован!');
+    }
+
+    importSave() {
+        try {
+            const code = document.getElementById('save-code').value.trim();
+            if (!code) return;
+            const data = JSON.parse(atob(code));
+            Object.assign(this, data);
+            if (this.autoMergeUnlocked) this.startAutoMerge();
+            this.closeModal();
+            this.showToast('📥 Загружено!');
+            this.render();
+            this.renderQuests();
+            this.renderSkills();
+            this.renderPets();
+            this.renderSkins();
+            this.renderDailyRewards();
+            this.checkDailyReward();
+            this.updatePlayerLevel();
+            if (this.autoclickerUnlocked) document.getElementById('autoclicker-panel').style.display = 'block';
+        } catch (e) {
+            this.showToast('❌ Неверный код!');
+        }
+    }
+
+    resetGame() {
+        if (!confirm('Сбросить ВСЁ прогресс?')) return;
+        localStorage.removeItem('merge100_save');
+        location.reload();
+    }
+
+    saveGame() {
+        const data = {
+            coins: this.coins, diamonds: this.diamonds, exp: this.exp, maxLevel: this.maxLevel,
+            items: this.items, slots: this.slots, incomeMultiplier: this.incomeMultiplier,
+            clickMultiplier: this.clickMultiplier, autoMergeUnlocked: this.autoMergeUnlocked,
+            costs: this.costs, shopLevel: this.shopLevel, prestigePoints: this.prestigePoints,
+            prestigeMultiplier: this.prestigeMultiplier, achievements: this.achievements,
+            totalMerges: this.totalMerges, totalEarned: this.totalEarned, playTime: this.playTime,
+            maxCombo: this.maxCombo, dailyStreak: this.dailyStreak, lastDailyClaim: this.lastDailyClaim,
+            lastSaveTime: Date.now(), skills: this.skills, pets: this.pets, skins: this.skins,
+            equippedSkin: this.equippedSkin, playerLevel: this.playerLevel, playerXP: this.playerXP,
+            playerXPRequired: this.playerXPRequired, quests: this.quests, autoclickerUnlocked: this.autoclickerUnlocked
+        };
+        localStorage.setItem('merge100_save', JSON.stringify(data));
+    }
+
+    loadGame() {
+        const saved = localStorage.getItem('merge100_save');
+        if (saved) {
+            const data = JSON.parse(saved);
+            Object.assign(this, data);
+            if (this.autoMergeUnlocked) this.startAutoMerge();
+            if (this.autoclickerUnlocked) document.getElementById('autoclicker-panel').style.display = 'block';
+        }
+    }
+
+    toggleSound() {
+        this.soundEnabled = !this.soundEnabled;
+        document.querySelectorAll('.settings-btn')[0].textContent = this.soundEnabled ? '🔊' : '🔇';
+    }
+
+    showFloatingText(text, x, y, color) {
+        const el = document.createElement('div');
+        el.className = 'floating-text';
+        el.textContent = text;
+        el.style.left = x + 'px';
+        el.style.top = y + 'px';
+        el.style.color = color;
+        document.body.appendChild(el);
+        setTimeout(() => el.remove(), 1000);
+    }
+
+    showToast(message) {
+        const existing = document.querySelector('.toast');
+        if (existing) existing.remove();
+        const toast = document.createElement('div');
+        toast.className = 'toast';
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+    }
+
+    createParticles(x, y) {
+        for (let i = 0; i < 20; i++) {
+            const particle = document.createElement('div');
+            particle.className = 'particle';
+            particle.style.left = x + 'px';
+            particle.style.top = y + 'px';
+            particle.style.setProperty('--tx', (Math.random() - 0.5) * 200 + 'px');
+            particle.style.setProperty('--ty', (Math.random() - 0.5) * 200 + 'px');
+            particle.style.background = `hsl(${Math.random() * 360}, 100%, 50%)`;
+            document.body.appendChild(particle);
+            setTimeout(() => particle.remove(), 1000);
+        }
+    }
+
+    createFireworks() {
+        setInterval(() => {
+            const x = Math.random() * window.innerWidth;
+            const y = Math.random() * window.innerHeight;
+            this.createParticles(x, y);
+        }, 500);
+    }
+
+    updateUI() {
+        document.getElementById('coins').textContent = this.formatNumber(this.coins);
+        document.getElementById('diamonds').textContent = this.diamonds;
+        document.getElementById('exp').textContent = this.formatNumber(this.exp);
+        document.getElementById('max-level').textContent = this.maxLevel;
+        document.getElementById('prestige-points').textContent = this.prestigePoints;
+        document.getElementById('income-display').textContent = this.formatNumber(this.getIncome());
+        document.getElementById('turbo-cost').textContent = this.formatNumber(this.turboCost);
+        document.getElementById('golden-cost').textContent = this.formatNumber(this.goldenCost);
+        const diamondIncome = 1 + (this.skills.find(s => s.id === 'diamond')?.level || 0);
+        document.getElementById('diamond-income').textContent = this.activePet?.id === 'unicorn' ? diamondIncome * 2 : diamondIncome;
+        document.getElementById('slot-cost').textContent = this.formatNumber(this.costs.slot);
+        document.getElementById('boost-cost').textContent = this.formatNumber(this.costs.boost);
+        document.getElementById('auto-merge-cost').textContent = this.autoMergeUnlocked ? '✅' : this.formatNumber(this.costs.autoMerge);
+        document.getElementById('high-level-cost').textContent = this.formatNumber(this.costs.highLevel);
+        document.getElementById('click-cost').textContent = this.formatNumber(this.costs.clickBoost);
+        document.getElementById('autoclick-cost').textContent = this.formatNumber(this.costs.autoclicker);
+        document.getElementById('diamond-buy-cost').textContent = this.formatNumber(this.costs.diamonds);
+        document.getElementById('shop-level').textContent = this.shopLevel;
+        this.updatePrestigeUI();
+    }
+
+    render() {
+        this.updateUI();
+        const container = document.getElementById('game-area');
+        container.innerHTML = '';
+        this.items.forEach((item, index) => {
+            const div = document.createElement('div');
+            div.className = `item ${item.golden ? 'golden' : ''}`;
+            if (this.selectedItems.includes(index)) div.classList.add('selected');
+            if (item.level >= 100) div.classList.add('max-level');
+            div.style.background = this.getItemColor(item.level);
+            div.dataset.index = index;
+            div.innerHTML = `<div class="item-icon">${this.getItemEmoji(item.level)}</div><div class="item-level">${item.level}</div>`;
+            div.onclick = () => this.selectItem(index);
+            container.appendChild(div);
+        });
+        for (let i = this.items.length; i < this.slots; i++) {
+            const div = document.createElement('div');
+            div.className = 'item';
+            div.style.background = 'rgba(255,255,255,0.05)';
+            div.style.border = '2px dashed rgba(255,255,255,0.2)';
+            div.style.cursor = 'default';
+            div.innerHTML = '<div style="opacity: 0.3; font-size: 2em;">+</div>';
+            container.appendChild(div);
+        }
+    }
+}
+
+const game = new Game();
+window.addEventListener('beforeunload', () => { game.saveGame(); });
+</script>
+</body>
+</html>
